@@ -5,8 +5,8 @@ import re
 
 # Step 0: Accessing the training and testing sets 
 
-train = pd.read_csv('C:\\Users\\mandy\\Desktop\\Kaggle competitions\\Titanic\\train.csv')
-test = pd.read_csv('C:\\Users\\mandy\\Desktop\\Kaggle competitions\\Titanic\\test.csv')
+train = pd.read_csv('...train.csv')
+test = pd.read_csv('...test.csv')
 
 # Combining training and testing set to obtain an overall look at the data set 
 
@@ -110,7 +110,8 @@ x,y = zip(*lists)
 plt.scatter(x,y)
 plt.show()
 
-# Based on graph, split ages accordingly: 15 or younger, 15 - 60 and over 60; add in category for unknown ages 
+# Based on graph, split ages accordingly: 15 or younger, 15 - 60 and over 60
+# Unknown ages are grouped in 15-60 if married; 15 and under otherwise
 
 for i, row in together.iterrows():
     if together.ix[i, 'Age'] > 0 and together.ix[i, 'Age'] <= 15: 
@@ -122,8 +123,10 @@ for i, row in together.iterrows():
     else: 
         if together.ix[i, 'HasSp'] == 1: 
             together.ix[i, 'Age1'] = '15 to 60'
-        else: 
+        elif together.ix[i, 'HasSib'] == 1: 
             together.ix[i, 'Age1'] = '15 and under'
+        else: 
+            together.ix[i, 'Age1'] = 'over 60'
  
  # Step 4: Determine if they are a crew member   
           
@@ -148,8 +151,76 @@ sns.heatmap(corr,
 
 # Split treated data back into train and test for model training and testing  
 
-treated_train = pd.concat([train.set_index('PassengerId'), together.set_index('PassengerId')], axis = 1, join = 'inner').reset_index()
-treated_train2 = treated_train[['Survived', 'PartySize1', 'IsCrew', 'Sex', 'Age1', 'HasSp', 'HasSib', 'Pclass', 'Embarked']]
+temp = pd.concat([train.set_index('PassengerId'), together.set_index('PassengerId')], axis = 1, join = 'inner').reset_index()
+temp2 = temp[['Survived', 'PartySize1', 'IsCrew', 'Sex', 'Age1', 'HasSp', 'HasSib', 'Pclass', 'Embarked']]
+treated_train = temp2.loc[:, ~temp2.columns.duplicated()]
 
-test1 = pd.concat([test.set_index('PassengerId'), together.set_index('PassengerId')], axis = 1, join = 'inner').reset_index()
-test2 = test1[['PassengerId', 'PartySize1', 'IsCrew', 'Sex', 'Age1', 'HasSp', 'HasSib', 'Pclass', 'Embarked']]
+temp_test = pd.concat([test.set_index('PassengerId'), together.set_index('PassengerId')], axis = 1, join = 'inner').reset_index()
+temp_test2 = temp_test[['PassengerId', 'PartySize1', 'IsCrew', 'Sex', 'Age1', 'HasSp', 'HasSib', 'Pclass', 'Embarked']]
+treated_test = temp_test2.loc[:, ~temp_test2.columns.duplicated()]
+
+# Fitting the model 
+
+from sklearn.linear_model import LogisticRegression 
+from sklearn.ensemble import RandomForestClassifier
+from patsy import dmatrices, dmatrix
+from sklearn.model_selection import KFold
+from sklearn.metrics import accuracy_score
+from sklearn.svm import SVC
+from sklearn.ensemble import GradientBoostingClassifier 
+
+# Step 6: creating dmatrices
+
+y, X = dmatrices('Survived ~ C(HasSp) + C(HasSib) + C(Embarked) + C(Age1) + C(Pclass) + C(Sex) + C(PartySize1)', treated_train, return_type = 'dataframe')
+
+# Step 7: 10 fold cross validation 
+# GBM performed the best at about an average of ~83%
+
+n = len(treated_train) 
+kf = KFold(n_splits = 10) 
+kf.get_n_splits(X)  
+
+logreg_performance = []
+rf_performance = [] 
+svc_performance = []
+gbm_performance = []
+
+for train_index, test_index in kf.split(X):
+    X_train, X_test = X.ix[train_index], X.ix[test_index]
+    y_train, y_test = y.ix[train_index], y.ix[test_index]
+    
+    # Logistic Regression 
+    logreg = LogisticRegression()
+    logreg.fit(X_train, y_train)
+    log_pred = logreg.predict(X_test)   
+    logreg_score = accuracy_score(y_test, log_pred) 
+    logreg_performance.append(logreg_score) 
+    
+    # Random Forest 
+    rf = RandomForestClassifier(n_estimators = 100) 
+    rf.fit(X_train, y_train) 
+    rf_pred = rf.predict(X_test) 
+    rf_score = accuracy_score(y_test, rf_pred) 
+    rf_performance.append(rf_score) 
+    
+    # Support Vector Machine 
+    svc = SVC() 
+    svc.fit(X_train, y_train) 
+    svc_pred = svc.predict(X_test) 
+    svc_score = accuracy_score(y_test, svc_pred) 
+    svc_performance.append(svc_score)
+    
+    # GBM 
+    gbm = GradientBoostingClassifier()
+    gbm.fit(X_train, y_train) 
+    gbm_pred = gbm.predict(X_test)
+    gbm_score = accuracy_score(y_test, gbm_pred)
+    gbm_performance.append(gbm_score)
+
+# Step 8: Fitting the entire model 
+
+gbm.fit(X, y)
+final_test = dmatrix('~ C(HasSp) + C(HasSib) + C(Embarked) + C(Age1) + C(Pclass) + C(Sex) + C(PartySize1)', treated_test, return_type = 'dataframe')
+final_pred = logreg.predict(final_test) 
+submission = pd.DataFrame({"PassengerId": test["PassengerId"],"Survived": final_pred})
+submission.to_csv('...Python_submission.csv', index=False)
