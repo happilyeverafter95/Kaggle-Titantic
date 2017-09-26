@@ -17,8 +17,12 @@ together = pd.concat(result, join_axes=None, ignore_index=True,
 
 # Step 1: Party Size Treatment 
 
+# Note 1: the variable SibSp represents the total number of siblings + spouse they are travelling with 
+# Note 2: the variable Parch represents the total number of parents + children they are travelling with 
+
+##### OBJECTIVE
 # Find the number of people they are travelling with. This includes non sibling/spouse companions. 
-# Find the maximum number between parch + sibsp + 1 and the number of times their ticket number appears in the concatenated list between training and testing set. 
+# Find the maximum number between (parch + sibsp + 1) and the number of times their ticket number appears in the concatenated list between training and testing set. 
 # (Everyone in the same travelling party has the same ticket number) 
 
 for i, row in together.iterrows():
@@ -28,7 +32,7 @@ for i, row in together.iterrows():
     temp = together['Ticket'].value_counts()
     together.ix[i, 'PartySize'] = max(temp[ticket], parch + sibsp + 1)
 
-# Bucket party size 
+# Bucket party size into 0 companions, 2-4 companions, 5+ companions 
 
 for i, row in together.iterrows():
     if together.ix[i, 'PartySize'] == 0: 
@@ -43,7 +47,8 @@ for i, row in together.iterrows():
 
 # Step 2: Seperating Sibling and Spouse 
 
-# Find the different types of name titles. Use titles to determine if they have a sibling/spouse using the SibSp variable. 
+#### OBJECTIVE: create two new binary variables wwhich indicates if the passenger has a spouse or has at least one sibling 
+# Find the different types of name titles. Use titles and SibSp variable to determine if they have a sibling/spouse. 
 # SibSp is the sum of sibling(s) and spouse they are travelling with. 
 
 titles = [] 
@@ -53,11 +58,13 @@ for i, row in together.iterrows():
         titles.append(re.findall(', [a-zA-Z]+.', together.ix[i, 'Name']))
 
 # These are the titles: Mr, Mrs, Miss, Master, Don, Rev, Dr, Mme, Ms, Major, Lady, Sir, Mlle, Col, Capt, the, Jonkheer, Dona 
-# Has Spouse determination (male): if travelling with a married female companion (validated through ticket number) who share their last name and SibSp > 0 -> married; otherwise -> unmarried 
 # Has Spouse determination (female): Has title "mrs/mme/lady" and SibSp > 0 -> has spouse; otherwise -> unmarried 
+# Has Spouse determination (male): if travelling with a married female companion (validated through ticket number) who share their last name and SibSp > 0 -> married; otherwise -> unmarried 
 # Has Sib determination: subtract one from SibSp if they are married. If remaining SibSp count > 0, then they have a sibling. 
 
 # Note: as HasSib and HasSpouse (HasSp) tells a similar story as SibSp and Parch, I chose to exclude SibSp and Parch from the final model in favor of HasSib and HasSpouse (HasSp)
+
+# Female
 
 for i, row in together.iterrows(): 
     if ('Mrs.' in together.ix[i, 'Name'].split() or 'Mme' in together.ix[i, 'Name'].split() or 'Lady' in together.ix[i, 'Name'].split()) and together.ix[i, 'SibSp'] > 0 : 
@@ -72,6 +79,8 @@ for i, row in together.iterrows():
             together.ix[i, 'HasSib'] = 1
         else: 
             together.ix[i, 'HasSib'] = 0
+
+# Male
 
 for i, row in together.iterrows():
     if together.ix[i, 'Sex'] == 'male' and together.ix[i, 'SibSp'] >0: 
@@ -170,6 +179,9 @@ from sklearn.svm import SVC
 from sklearn.ensemble import GradientBoostingClassifier 
 
 # Step 6: creating dmatrices
+
+# Elected not to include IsCrew due to the noise it creates (not enough crew members to justify the noise) 
+# Elected not to include any interaction effects due to noise 
 
 y, X = dmatrices('Survived ~ C(HasSp) + C(HasSib) + C(Embarked) + C(Age1) + C(Pclass) + C(Sex) + C(PartySize1)', treated_train, return_type = 'dataframe')
 
